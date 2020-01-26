@@ -1,0 +1,357 @@
+# Underfloor Heating Pump Controller
+# ESPHome - Sonoff S20 extended with Dallas temperature sensor
+#
+# Controls a underfloor heating-pump. When warm water is received from the
+# central heater, warm water is entering the pump via its pipes. This is
+# detected by the temperature sensor and the pump will be switched on.
+# When the heater stops (requested temperature is reached) the flow of water
+# will cool down. The temperature sensor will detect this and will shut
+# down the pump.
+#
+# Two thresholds are used to determine when to switch on or of
+# the pump. These are set by two service calls.
+#   - threshold_on
+#   - threshold_off
+#
+# Multi room temperature control
+# If warm water is received by the pump, but the room is currently empty,
+# it is better to not start the pump. It may act as a valve. No warm water
+# will be spread through the pipes and this will save some energy.
+# For this, the controller can be set in manual mode. In this mode the pump
+# is controlled by a template switch. The temperature sensor is ignored.
+#
+# Anti corrosion
+# If the pump has not run for a longer period of time (days, weeks), it is
+# possible that it corrodes. The pump is not rotating anymore. The controller
+# makes sure that every day the pump runs for a minute (at midnight).
+#
+# The S20 green light indicates the mode. In automatic mode (default) flashes
+# slowly. In manual mode the green led is just on.
+#
+# The S20 push button sequences through the following options:
+#   1- When in automatic mode
+#      - Manual mode is selected
+#      - Pump input switch is set to 'OFF'
+#
+#   2- When in manual mode and Pump is 'OFF'
+#      - pump input switch is set to 'ON'
+#
+#   3- When in manual mode and Pump is 'ON'
+#      - Automatic mode is selected
+#      - pump input switch is set to 'OFF'
+#
+# In case the controller is unable to connect with Home Assistant for 5 minutes,
+# the controller switches over to automatic mode.
+#
+
+esphome:
+  name: pump_controller
+  platform: ESP8266
+  board: esp01_1m
+  esp8266_restore_from_flash: yes
+  comment: Underfloor heating pump controller.
+  on_boot:
+    then:
+      - script.execute: led_signaling
+      - script.execute: controller
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+ota:
+  password: !secret esphome_ota_password
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: !secret ha_api_password
+
+  services:
+    - service: threshold_off
+      variables:
+        value: float
+      then:
+        - lambda: |-
+            id(g_threshold_temp_off) = value;
+            /* ensure some distance between both thresholds */
+            auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
+            if (d < 2.0){
+              id(g_threshold_temp_on) = value + 2.0;  
+            }
+        - script.execute: controller
+
+    - service: threshold_on
+      variables:
+        value: float
+      then:
+        - lambda: |-
+            id(g_threshold_temp_on) = value;
+             /* ensure some distance between both thresholds */
+            auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
+            if (d < 2.0){
+              id(g_threshold_temp_off) = value - 2.0;  
+            }
+        - script.execute: controller
+
+globals:
+  # true when in automatic mode
+  # false when in manual mode
+  - id: g_automatic_mode
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  # if water temperature below this threshold
+  # pump demand automatic will be 'off' (false)
+  - id: g_threshold_temp_off
+    type: float
+    restore_value: yes
+    initial_value: "23.0"
+
+  # if water temperature above this threshold
+  # pump demand automatic will be 'on' (true)
+  - id: g_threshold_temp_on
+    type: float
+    restore_value: yes
+    initial_value: "30.0"
+
+  # manual demand pump
+  - id: g_pump_demand_manual
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  # true in case anti corrosion is active
+  - id: g_pump_demand_anti_corr
+    type: boolean
+    restore_value: no
+    initial_value: "false"
+
+  # demand based on water temperature
+  - id: g_pump_demand_automatic
+    type: boolean
+    restore_value: no
+    initial_value: "false"
+
+dallas:
+  - pin:
+      number: GPIO3
+    update_interval: 1s
+
+sensor:
+  - platform: dallas
+    id: sensor_water_temperature
+    name: "Water temperature"
+    address: 0xEC031564F652FF28
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    filters:
+      - delta: 0.1
+    on_value:
+      then:
+        # the controller is notified when the water temperature crosses
+        # one of the thresholds
+        - lambda: |-
+            /* only useful when in automatic mode */
+            if(!id(g_automatic_mode)){
+              return;
+            }
+
+            /* only submit when something has changed */
+            auto water_temperature = id(sensor_water_temperature).state;
+
+            if (
+              water_temperature < id(g_threshold_temp_off) 
+              && id(g_pump_demand_automatic)){
+                  id(g_pump_demand_automatic) = false;
+                  id(controller).execute();
+            } 
+            else if (
+              water_temperature > id(g_threshold_temp_on) 
+              && !id(g_pump_demand_automatic)){
+                  id(g_pump_demand_automatic) = true;
+                  id(controller).execute();
+            }
+
+  - platform: template
+    name: "Threshold off"
+    id: sensor_threshold_temp_off
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    lambda: return id(g_threshold_temp_off);
+
+  - platform: template
+    id: sensor_threshold_temp_on
+    name: "Threshold on"
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    lambda: return id(g_threshold_temp_on);
+
+binary_sensor:
+  # The S20 push button can be used to select the automatic mode and
+  # the manual demand. This is an alternative for both template switches
+  # sw_automatic_mode and sw_on_off.
+  - platform: gpio
+    id: s20_push_button
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: True
+    on_press:
+      then:
+        - lambda: |-
+            if(id(g_automatic_mode)){
+              id(g_automatic_mode) = false;
+              id(g_pump_demand_manual) = false;
+            } 
+            else if(!id(g_pump_demand_manual)){
+              id(g_pump_demand_manual) = true;
+            } 
+            else{
+              id(g_automatic_mode) = true;
+              id(g_pump_demand_manual) = false;
+            }
+        - script.execute: led_signaling
+        - script.execute: controller
+
+  # In case the API connection is lost, the controller will change
+  # to automatic mode.
+  - platform: template
+    id: sensor_api_connected
+    lambda: return global_api_server->is_connected();
+    filters:
+      - delayed_on: 5min
+    on_release:
+      then:
+        - logger.log: Lost API connection, selecting automatic mode
+        - switch.turn_on: sw_automatic_mode
+
+  # template sensor to publish pump state
+  - platform: template
+    name: "Pump state"
+    id: sensor_pump_state
+    lambda: return id(s20_relay).state;
+
+switch:
+  # relay, switches pump on and off
+  - platform: gpio
+    pin: GPIO12
+    id: s20_relay
+
+  # Boolean input to toggle between manual or automatic mode
+  - platform: template
+    name: Manual/Automatic
+    id: sw_automatic_mode
+    lambda: return id(g_automatic_mode);
+    turn_on_action:
+      - globals.set:
+          id: g_automatic_mode
+          value: "true"
+      - script.execute: controller
+      - script.execute: led_signaling
+    turn_off_action:
+      - globals.set:
+          id: g_automatic_mode
+          value: "false"
+      - script.execute: controller
+      - script.execute: led_signaling
+
+  # Boolean input to control manual demand
+  - platform: template
+    name: "On/Off"
+    id: sw_on_off
+    lambda: return id(g_pump_demand_manual);
+    turn_on_action:
+      - globals.set:
+          id: g_pump_demand_manual
+          value: "true"
+      - script.execute: controller
+    turn_off_action:
+      - globals.set:
+          id: g_pump_demand_manual
+          value: "false"
+      - script.execute: controller
+
+time:
+  - platform: sntp
+    on_time:
+      # schedule anti corrosion action, once a day
+      - hours: 1
+        then:
+          - globals.set:
+              id: g_pump_demand_anti_corr
+              value: "true"
+          - script.execute: controller
+          - delay: 60s
+          - globals.set:
+              id: g_pump_demand_anti_corr
+              value: "false"
+          - script.execute: controller
+
+script:
+  # script for calculating the demand for the pump. Should
+  # it run or not. Applies the changes to the relay.
+  - id: controller
+    then:
+      - lambda: |-
+          /* calculate if pump should be on or not */
+          bool demand = false;
+
+          if (id(g_pump_demand_anti_corr)){
+            /* anti corrosion run */
+            demand = true;
+          } 
+          else if (!id(g_automatic_mode)){
+            /* manual mode */
+            demand = id(g_pump_demand_manual);
+          }
+          else{
+            /* automatic mode */
+            demand = id(g_pump_demand_automatic);
+          }
+
+          /* only send commands when needed */
+          if (demand && !id(s20_relay).state) {
+            id(s20_relay).turn_on();
+          } else if (!demand && id(s20_relay).state){
+            id(s20_relay).turn_off();
+          }
+
+  - id: led_signaling
+    then:
+      # The green led is used to show the mode of operation:
+      #  - manual mode, led is on
+      #  - automatic mode, led blinks
+      - lambda: |-
+          if (id(g_automatic_mode)){
+            auto call = id(s20_led).turn_on();
+            call.set_effect("auto_effect");
+            call.perform();
+          } else {
+            auto call = id(s20_led).turn_on();
+            call.set_effect("none");
+            call.perform();
+          }
+
+output:
+  - platform: esp8266_pwm
+    id: s20_green_led
+    pin:
+      number: GPIO13
+      inverted: True
+
+light:
+  - platform: monochromatic
+    output: s20_green_led
+    id: s20_led
+    effects:
+      - strobe:
+          name: auto_effect
+          colors:
+            - brightness: 100%
+              duration: 1s
+            - brightness: 0%
+              duration: 2s
