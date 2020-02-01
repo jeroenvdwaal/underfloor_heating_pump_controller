@@ -1,0 +1,26 @@
+views:
+  - badges: []
+    cards:
+      - type: vertical-stack
+        title: Underfloor heating pump
+        cards:
+          - type: horizontal-stack
+            cards:
+              - type: entities
+                entities:
+                  - entity: switch.manual_automatic
+                    name: Automatic
+                  - entity: switch.on_off
+                    name: Manual override
+                  - entity: binary_sensor.pump_state
+              - type: sensor
+                entity: sensor.water_temperature
+                graph: line
+                name: Water temperature
+          - type: entities
+            title: Thresholds automatic mode
+            entities:
+              - entity: input_number.threshold_temp_off
+                name: Temperature pump off
+              - entity: input_number.threshold_temp_on
+                name: Temperature pump on
