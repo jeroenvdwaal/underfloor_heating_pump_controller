@@ -75,8 +75,13 @@ api:
         value: float
       then:
         - lambda: |-
+            if (value < 0.0f){
+              return;
+            }
+            if (value > 48.0f){
+              value = 48.0;
+            }
             id(g_threshold_temp_off) = value;
-            /* ensure some distance between both thresholds */
             auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
             if (d < 2.0){
               id(g_threshold_temp_on) = value + 2.0;  
@@ -88,8 +93,13 @@ api:
         value: float
       then:
         - lambda: |-
+            if (value > 50.0f){
+              return;
+            }
+            if (value < 2.0) {
+              value = 2.0;
+            }
             id(g_threshold_temp_on) = value;
-             /* ensure some distance between both thresholds */
             auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
             if (d < 2.0){
               id(g_threshold_temp_off) = value - 2.0;  
@@ -182,6 +192,9 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     lambda: return id(g_threshold_temp_off);
+    update_interval: 1ms
+    filters:
+      - delta: 0.1
 
   - platform: template
     id: sensor_threshold_temp_on
@@ -189,6 +202,9 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     lambda: return id(g_threshold_temp_on);
+    update_interval: 1ms
+    filters:
+      - delta: 0.1
 
 binary_sensor:
   # The S20 push button can be used to select the automatic mode and
@@ -223,7 +239,7 @@ binary_sensor:
     id: sensor_api_connected
     lambda: return global_api_server->is_connected();
     filters:
-      - delayed_on: 5min
+      - delayed_off: 5min
     on_release:
       then:
         - logger.log: Lost API connection, selecting automatic mode
@@ -231,7 +247,7 @@ binary_sensor:
 
   # template sensor to publish pump state
   - platform: template
-    name: "Pump state"
+    name: "Pump"
     id: sensor_pump_state
     lambda: return id(s20_relay).state;
 
