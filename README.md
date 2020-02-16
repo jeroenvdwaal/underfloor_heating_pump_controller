@@ -25,7 +25,7 @@ The project uses [Home Assistant](https://www.home-assistant.io/) and the beauti
      </td>
      <td align="center" style="width: 30%">
         <img src="images/s20.png"
-            alt="ESP Home"
+            alt="Sonoff S20"
             href="https://esphome.io/"
             style="width: 70%">
      </td>
@@ -46,36 +46,40 @@ When a pump is not running for a longer time, it may become stuck due to corrosi
 
 ## Building the controller
 
-Warning. This project requires changes to the Sonoff S20. Contact with live parts may cause shocks and burns. Building and using the controller is at your own risk.
+Warning. This project requires changes to the Sonoff S20. Contact with live parts may cause shocks and burns. Building and using the controller is at your own risk. The build process exists of two steps. Adding a temperature sensor to the S20 and replacing the existing firmware.
 
 ### Sonoff S20 hardware modifications
 
-Open the S20 to get access to the main board. Take the mainboard out and solder an header as shown in the figure below. Drill a hole to guide the sensor wire through the S20 body. Solder the wires of the DS18B20 with the resistor on the connector. Isolate with isolation tape or shrink tube. [See this link](https://esphome.io/components/sensor/dallas.html). 
+In this section the DS18b20 will be added to the Sonoff S20. Don't solder the wires directly to the mainboard. Use a header instead. 
+
+Open the S20 to get access to the main board. Take the mainboard out and solder an header as shown in the figure below. Drill a hole to guide the sensor wire through the S20 body. Solder the wires of the DS18B20 with the resistor on a connector. Isolate with insulation tape or shrink tube. [See this link](https://esphome.io/components/sensor/dallas.html). 
 
 <table><tr>
 <td align="center">
 <figure>
 <img src="images/s20_3.jpg"
-        alt="ESP Home"/>
+        alt="Header Mainboard"/>
 <figcaption>Header Mainboard</figcaption>
 </figure>
 <td align="center">
 <figure>
 <img src="images/s20_2.jpg" 
-        alt="ESP Home"/>
+        alt="Pass through with glue"/>
 <figcaption>Pass through with glue</figcaption>
 </figure>
 <td align="center">
 <figure>
 <img src="images/s20_5.jpg"
-        alt="ESP Home"/>
+        alt="Connector with resistor"/>
 <figcaption>Connector with resistor</figcaption>
 </figure>
 </tr></table>
 
-### Flash the S20
+### New firmware for the Sonoff S20
 
-The firmware requires ESPHome. Copy the [pump_controller.yaml](pump_controller.yaml) file to the esphome folder. The controller requires four secrets. Specify the secrets in secrets.yaml. 
+In this step the S20 will be flashed with new firmware. The provided source for the firmware can be found here [pump_controller.yaml](pump_controller.yaml). The controller requires ESPHome together with Home Assistant.
+
+Copy the [pump_controller.yaml](pump_controller.yaml) file to the esphome folder. The controller requires four secrets, see the following code snippet. Specify the secrets in secrets.yaml.
 
 ``` yaml
 wifi:
@@ -93,33 +97,56 @@ api:
   password: !secret ha_api_password
 ```
 
-Comment out the Dallas address. The file is now ready to be compiled and flashed to the S20. More details can be found [here](https://esphome.io/devices/sonoff_s20.html). Please read carefully and take notice of the warnings.
-
-Close the S20 case and check that it running as expected. A green, slow blinking light, glows around the push button. Home Assistant announces a new device. Accept the device. The following entities are added automatically:
-
-- Automatic or manual mode switch
-- Pump on or off switch, which only operates in manual mode
-- Threshold on sensor
-- Threshold off sensor
-- Actual water temperature 
-
-The Dallas documentation states that it is better to use the sensor address. Read the address from the ESPHome log and update the yaml file. Compile and flash again.
+Comment out the Dallas address in the source code. The file is now ready to be compiled and flashed to the S20. Follow [this](https://esphome.io/devices/sonoff_s20.html) ESPHome guide. Please read carefully and take notice of the warnings.
 
 <figure>
 <img src="images/s20_f.jpg"
-        alt="ESP Home"
+        alt="Final result"
         width="50%"/>
 <figcaption>The final result</figcaption>
 </figure>
 
-This completes the step.
+Close the S20 case and check that it running as expected. When started, a green, slow blinking light, glows around the push button. 
+Finally the address of the DS18b20 can be set in the source code as described in the ESPHome documentation for the Dallas component. Read the address from the ESPHome log and update the yaml file. Compile and flash again.
+
+### the firmware in more detail
+
+Plug-in the controller and Home Assistant will announce a new device with the following entities:
+
+- A switch for selecting Automatic or Manual mode
+- A Manual Control switch
+- A sensor that holds the 'Threshold On' temperature
+- A sensor that holds the 'Threshold Off' temperature
+- A sensor that holds the actual water temperature
+- A sensor that shows the state of the pump (running or not)
+
+The controller operates in Manual or Automatic mode. In Manual mode, the pump is switched on or off by the Manual Control switch. 
+
+In Automatic mode, the pump is switched on and off automatically. When the actual water temperature crosses the Threshold On, the pump will be switched on. In case the actual water temperature crosses the Threshold Off, the pump will be switched off. 
+
+The manual mode is added to support the multi-room climate control. The S20 starts in automatic mode. The push button cycles between following settings:
+1. Manual Mode - Manual Control switch Off
+2. Manual Mode - Manual Control switch on
+3. Automatic Mode
+
+In case the connection with the network of Home Assistant is lost, the controller switches to Automatic Mode.
+
+Both thresholds are set by calling a service. This will be covererd in another section.
 
 ## Installing the controller
 
+TBD
 
+## Home Assistant integration
 
+The file [underfloor_heating_pump.yaml](underfloor_heating_pump.yaml) adds and synchronizes the sliders for both thresholds between Home Assistant and the controller. Thresholds are stored in controller and allows it to operate without Home Assistant being available.
 
-The S20 Wifi switch can be easily modified
-![alt text](<https://raw.githubusercontent.com/jeroenvdwaal/underfloor_heating_pump_controller/master/images/ui.png> "lovelace example")
-![alt text](https://raw.githubusercontent.com/jeroenvdwaal/underfloor_heating_pump_controller/master/images/s20.png "Sonoff S20")
-![alt text](https://raw.githubusercontent.com/jeroenvdwaal/underfloor_heating_pump_controller/master/images/ds18b20.png "Temperature sensor")
+The [lovelace](lovelace.yaml) file is an example how to integrate the controller in the ui. 
+
+<figure>
+<img src="images/ui.png"
+        alt="Lovelace UI"
+        width="50%"/>
+<figcaption>Lovelace UI</figcaption>
+</figure>
+
