@@ -16,18 +16,19 @@ The project uses [Home Assistant](https://www.home-assistant.io/) and the beauti
         <img src="images/ha.svg"
             alt="Home Assistant"
             href="https://www.home-assistant.io/"
-            style="width: 50%">
+            style="width: 30%">
      </td>
      <td align="center" style="width: 30%">
         <img src="images/esphome.svg"
             alt="ESP Home"
-            href="https://esphome.io/">
+            href="https://esphome.io/"
+            style="width: 30%">
      </td>
      <td align="center" style="width: 30%">
         <img src="images/s20.png"
             alt="Sonoff S20"
             href="https://esphome.io/"
-            style="width: 70%">
+            style="width: 30%">
      </td>
      </tr>
 </table>
