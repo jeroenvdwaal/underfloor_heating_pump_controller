@@ -74,6 +74,13 @@ Open the S20 to get access to the main board. Take the mainboard out and solder 
         alt="Connector with resistor"/>
 <figcaption>Connector with resistor</figcaption>
 </figure>
+</tr>
+<tr>
+<td align="center" colspan="3">
+<figure>
+<img src="images/DS18B20_wiring.drawio.png"
+        alt="Wiring"/>
+<figcaption>Wiring sensor and header inside S20</figcaption>
 </tr></table>
 
 ### New firmware for the Sonoff S20
@@ -132,11 +139,15 @@ The manual mode is added to support the multi-room climate control. The S20 star
 
 In case the connection with the network of Home Assistant is lost, the controller switches to Automatic Mode.
 
-Both thresholds are set by calling a service. This will be covererd in another section.
+Both thresholds are set by calling a service. This will be covered in another section.
 
 ## Installing the controller
 
-TBD
+Installation is shown in the image below. The pump is plugged into the S20. The sensor is attached to the pipe in which warm water is entering the underfloor heating. Check this carefully, or your system will fail to work.
+
+Two tie-wraps are used to mount the sensor.
+
+![Image of installation](images/installation.jpeg)
 
 ## Home Assistant integration
 
