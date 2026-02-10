@@ -46,14 +46,16 @@
 
 esphome:
   name: pump_controller
-  platform: ESP8266
-  board: esp01_1m
-  esp8266_restore_from_flash: yes
   comment: Underfloor heating pump controller.
   on_boot:
     then:
+      - script.execute: load_settings
       - script.execute: led_signaling
       - script.execute: controller
+
+esp8266:
+  board: esp01_1m
+  restore_from_flash: yes
 
 wifi:
   ssid: !secret wifi_ssid
@@ -68,43 +70,6 @@ logger:
 # Enable Home Assistant API
 api:
   password: !secret ha_api_password
-
-  services:
-    - service: threshold_off
-      variables:
-        value: float
-      then:
-        - lambda: |-
-            if (value < 0.0f){
-              return;
-            }
-            if (value > 48.0f){
-              value = 48.0;
-            }
-            id(g_threshold_temp_off) = value;
-            auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
-            if (d < 2.0){
-              id(g_threshold_temp_on) = value + 2.0;  
-            }
-        - script.execute: controller
-
-    - service: threshold_on
-      variables:
-        value: float
-      then:
-        - lambda: |-
-            if (value > 50.0f){
-              return;
-            }
-            if (value < 2.0) {
-              value = 2.0;
-            }
-            id(g_threshold_temp_on) = value;
-            auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
-            if (d < 2.0){
-              id(g_threshold_temp_off) = value - 2.0;  
-            }
-        - script.execute: controller
 
 globals:
   # true when in automatic mode
@@ -186,25 +151,54 @@ sensor:
                   id(controller).execute();
             }
 
+number:
   - platform: template
-    name: "Threshold off"
-    id: sensor_threshold_temp_off
+    name: "Threshold on"
+    id: sl_threshold_on
     unit_of_measurement: "°C"
-    accuracy_decimals: 1
-    lambda: return id(g_threshold_temp_off);
-    update_interval: 1ms
-    filters:
-      - delta: 0.1
+    icon: mdi:thermometer-chevron-up
+    optimistic: "true"
+    step: 1
+    min_value: 2
+    max_value: 50
+    mode: "slider"
+    set_action:
+      then:
+        - lambda: |-
+            id(g_threshold_temp_on) = x;
+            auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
+            if (d < 2.0)
+            {
+              id(g_threshold_temp_off) = id(g_threshold_temp_on) - 2.0;
+
+              auto call = id(sl_threshold_off).make_call();
+              call.set_value(id(g_threshold_temp_off));
+              call.perform();
+            }
 
   - platform: template
-    id: sensor_threshold_temp_on
-    name: "Threshold on"
+    name: "Threshold off"
+    id: sl_threshold_off
     unit_of_measurement: "°C"
-    accuracy_decimals: 1
-    lambda: return id(g_threshold_temp_on);
-    update_interval: 1ms
-    filters:
-      - delta: 0.1
+    icon: mdi:thermometer-chevron-down
+    optimistic: "true"
+    step: 1
+    min_value: 0
+    max_value: 48
+    mode: "slider"
+    set_action:
+      then:
+        - lambda: |-
+            id(g_threshold_temp_off) = x;
+            auto d = id(g_threshold_temp_on) - id(g_threshold_temp_off);
+            if (d < 2.0)
+            {
+              id(g_threshold_temp_on) = id(g_threshold_temp_off) + 2.0;
+
+              auto call = id(sl_threshold_on).make_call();
+              call.set_value(id(g_threshold_temp_on));
+              call.perform();
+            }
 
 binary_sensor:
   # The S20 push button can be used to select the automatic mode and
@@ -296,6 +290,8 @@ time:
     on_time:
       # schedule anti corrosion action, once a day
       - hours: 1
+        minutes: 0
+        seconds: 0
         then:
           - globals.set:
               id: g_pump_demand_anti_corr
@@ -351,6 +347,17 @@ script:
             call.set_effect("none");
             call.perform();
           }
+
+  - id: load_settings
+    then:
+      # Restore values to sliders
+      - lambda: |-
+          auto call1 = id(sl_threshold_on).make_call();
+          auto call2 = id(sl_threshold_off).make_call();
+          call1.set_value(id(g_threshold_temp_on));
+          call2.set_value(id(g_threshold_temp_off));
+          call1.perform();
+          call2.perform();
 
 output:
   - platform: esp8266_pwm
